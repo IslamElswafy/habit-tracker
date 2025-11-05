@@ -1,0 +1,230 @@
+import { useState, useEffect } from 'react';
+import { Trash2, Edit2, Save, X } from 'lucide-react';
+import { getHabits, deleteHabit, updateHabit } from '../services/habitService';
+import { getCategoryById, HABIT_CATEGORIES } from '../config/categories';
+import { getDeviceId } from '../config/firebase';
+
+const SettingsPage = () => {
+  const [habits, setHabits] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [deviceId, setDeviceId] = useState('');
+
+  useEffect(() => {
+    loadHabits();
+    setDeviceId(getDeviceId());
+  }, []);
+
+  const loadHabits = async () => {
+    setIsLoading(true);
+    try {
+      const habitsData = await getHabits();
+      setHabits(habitsData);
+    } catch (error) {
+      console.error('Error loading habits:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async (habitId) => {
+    if (!confirm('هل أنت متأكد من حذف هذه العادة؟')) return;
+    
+    try {
+      await deleteHabit(habitId);
+      setHabits(habits.filter(h => h.id !== habitId));
+    } catch (error) {
+      console.error('Error deleting habit:', error);
+      alert('حدث خطأ أثناء حذف العادة');
+    }
+  };
+
+  const handleEdit = (habit) => {
+    setEditingId(habit.id);
+    setEditForm({
+      title: habit.title,
+      description: habit.description,
+      category: habit.category,
+      points: habit.points,
+    });
+  };
+
+  const handleSave = async (habitId) => {
+    try {
+      await updateHabit(habitId, editForm);
+      setHabits(habits.map(h => 
+        h.id === habitId ? { ...h, ...editForm } : h
+      ));
+      setEditingId(null);
+      setEditForm({});
+    } catch (error) {
+      console.error('Error updating habit:', error);
+      alert('حدث خطأ أثناء تحديث العادة');
+    }
+  };
+
+  const handleCancel = () => {
+    setEditingId(null);
+    setEditForm({});
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">جاري التحميل...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background pb-20 md:pb-8">
+      <div className="max-w-4xl mx-auto p-4 md:p-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold mb-2">الإعدادات</h1>
+          <p className="text-muted-foreground">إدارة العادات ومعلومات الجهاز</p>
+        </div>
+
+        {/* Device Info */}
+        <div className="bg-card border border-border rounded-lg p-6 mb-8">
+          <h2 className="text-lg font-semibold mb-4">معلومات الجهاز</h2>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">معرف الجهاز:</span>
+              <code className="text-xs bg-muted px-3 py-1 rounded">{deviceId}</code>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              استخدم هذا المعرف للوصول إلى بياناتك من أجهزة أخرى
+            </p>
+          </div>
+        </div>
+
+        {/* Habits Management */}
+        <div className="bg-card border border-border rounded-lg p-6">
+          <h2 className="text-lg font-semibold mb-4">إدارة العادات</h2>
+          
+          {habits.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">لا توجد عادات لإدارتها</p>
+          ) : (
+            <div className="space-y-4">
+              {habits.map((habit) => {
+                const category = getCategoryById(habit.category);
+                const CategoryIcon = category.icon;
+                const isEditing = editingId === habit.id;
+
+                return (
+                  <div key={habit.id} className="border border-border rounded-lg p-4">
+                    {isEditing ? (
+                      // Edit Mode
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          value={editForm.title}
+                          onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                          className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                          placeholder="اسم العادة"
+                        />
+                        <textarea
+                          value={editForm.description}
+                          onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                          className="w-full px-3 py-2 border border-input rounded-md bg-background resize-none"
+                          rows="2"
+                          placeholder="الوصف"
+                        />
+                        <div className="grid grid-cols-2 gap-3">
+                          <select
+                            value={editForm.category}
+                            onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                            className="px-3 py-2 border border-input rounded-md bg-background"
+                          >
+                            {Object.values(HABIT_CATEGORIES).map((cat) => (
+                              <option key={cat.id} value={cat.id}>
+                                {cat.name}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            value={editForm.points}
+                            onChange={(e) => setEditForm({ ...editForm, points: parseInt(e.target.value) })}
+                            className="px-3 py-2 border border-input rounded-md bg-background"
+                            placeholder="النقاط"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleSave(habit.id)}
+                            className="flex-1 flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 transition-colors"
+                          >
+                            <Save className="h-4 w-4" />
+                            حفظ
+                          </button>
+                          <button
+                            onClick={handleCancel}
+                            className="flex-1 flex items-center justify-center gap-2 bg-secondary text-secondary-foreground px-4 py-2 rounded-md hover:bg-secondary/80 transition-colors"
+                          >
+                            <X className="h-4 w-4" />
+                            إلغاء
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      // View Mode
+                      <div className="flex items-start gap-4">
+                        <div className={`p-3 rounded-lg ${category.bgColor}`}>
+                          <CategoryIcon className={`h-5 w-5 ${category.color}`} />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-semibold mb-1">{habit.title}</h3>
+                          <p className="text-sm text-muted-foreground mb-2">{habit.description}</p>
+                          <div className="flex gap-3 text-xs">
+                            <span className="bg-secondary px-2 py-1 rounded">{category.name}</span>
+                            <span className="bg-secondary px-2 py-1 rounded">{habit.points} نقطة</span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleEdit(habit)}
+                            className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(habit.id)}
+                            className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Firebase Configuration Notice */}
+        <div className="mt-8 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-6">
+          <h3 className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+            تنبيه: إعداد Firebase
+          </h3>
+          <p className="text-sm text-yellow-700 dark:text-yellow-300">
+            لكي يعمل التطبيق بشكل صحيح، يجب تحديث ملف التكوين في 
+            <code className="mx-1 px-2 py-1 bg-yellow-500/20 rounded">src/config/firebase.js</code>
+            بمعلومات مشروعك من Firebase Console.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default SettingsPage;
+
