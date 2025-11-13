@@ -155,12 +155,27 @@ export const deleteHabit = async (habitId) => {
 };
 
 // تحديد عادة كمكتملة لليوم الحالي
-export const completeHabit = async (habitId, points) => {
+export const completeHabit = async (habitId, points, isBadHabit = false) => {
   try {
     const deviceId = getDeviceId();
     const today = format(new Date(), "yyyy-MM-dd");
-    const completionId = `${habitId}_${today}`;
 
+    // للعادات السيئة، نضيف إكمال جديد بدلاً من استبدال القديم
+    if (isBadHabit) {
+      const completionRef = doc(collection(db, COMPLETIONS_COLLECTION));
+      await setDoc(completionRef, {
+        habitId,
+        deviceId,
+        date: today,
+        points,
+        completedAt: new Date().toISOString(),
+        isRepeatable: true, // علامة للعادات القابلة للتكرار
+      });
+      return true;
+    }
+
+    // للعادات العادية، نستخدم النظام القديم
+    const completionId = `${habitId}_${today}`;
     const completionRef = doc(db, COMPLETIONS_COLLECTION, completionId);
 
     await setDoc(completionRef, {
@@ -179,11 +194,45 @@ export const completeHabit = async (habitId, points) => {
 };
 
 // إلغاء إكمال عادة لليوم الحالي
-export const uncompleteHabit = async (habitId) => {
+export const uncompleteHabit = async (habitId, isBadHabit = false) => {
   try {
     const today = format(new Date(), "yyyy-MM-dd");
-    const completionId = `${habitId}_${today}`;
 
+    // للعادات السيئة، نحذف آخر إكمال
+    if (isBadHabit) {
+      const deviceId = getDeviceId();
+      const completionsRef = collection(db, COMPLETIONS_COLLECTION);
+
+      const q = query(
+        completionsRef,
+        where("deviceId", "==", deviceId),
+        where("habitId", "==", habitId)
+      );
+
+      const querySnapshot = await getDocs(q);
+      const todayCompletions = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.date === today && data.isRepeatable === true) {
+          todayCompletions.push({ id: doc.id, completedAt: data.completedAt });
+        }
+      });
+
+      // ترتيب حسب الوقت واختيار الأحدث
+      todayCompletions.sort(
+        (a, b) => new Date(b.completedAt) - new Date(a.completedAt)
+      );
+
+      if (todayCompletions.length > 0) {
+        await deleteDoc(
+          doc(db, COMPLETIONS_COLLECTION, todayCompletions[0].id)
+        );
+      }
+      return true;
+    }
+
+    // للعادات العادية، نستخدم النظام القديم
+    const completionId = `${habitId}_${today}`;
     const completionRef = doc(db, COMPLETIONS_COLLECTION, completionId);
     await deleteDoc(completionRef);
 
@@ -207,6 +256,47 @@ export const isHabitCompletedToday = async (habitId) => {
   } catch (error) {
     console.error("Error checking habit completion:", error);
     return false;
+  }
+};
+
+// الحصول على عدد مرات إكمال عادة سيئة لليوم الحالي
+export const getBadHabitCompletionsCountToday = async (habitId) => {
+  try {
+    const deviceId = getDeviceId();
+    const today = format(new Date(), "yyyy-MM-dd");
+    const completionsRef = collection(db, COMPLETIONS_COLLECTION);
+
+    // استعلام بسيط ثم فلترة في JavaScript لتجنب الحاجة لـ index مركب
+    const q = query(
+      completionsRef,
+      where("deviceId", "==", deviceId),
+      where("habitId", "==", habitId)
+    );
+
+    const querySnapshot = await getDocs(q);
+    let count = 0;
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (data.date === today && data.isRepeatable === true) {
+        count++;
+      }
+    });
+
+    return count;
+  } catch (error) {
+    console.error("Error getting bad habit completions count:", error);
+    return 0;
+  }
+};
+
+// الحصول على إجمالي النقاط من عادة سيئة لليوم الحالي
+export const getBadHabitPointsToday = async (habitId, pointsPerCompletion) => {
+  try {
+    const count = await getBadHabitCompletionsCountToday(habitId);
+    return count * pointsPerCompletion;
+  } catch (error) {
+    console.error("Error getting bad habit points:", error);
+    return 0;
   }
 };
 

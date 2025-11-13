@@ -4,6 +4,7 @@ import HomePage from './pages/HomePage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import SetupPage from './pages/SetupPage';
+import StorePage from './pages/StorePage';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/setup" element={<SetupPage />} />
+            <Route path="/store" element={<StorePage />} />
           </Routes>
         </div>
       </div>

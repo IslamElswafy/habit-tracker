@@ -18,13 +18,8 @@ const app = initializeApp(firebaseConfig);
 // تهيئة Firestore
 export const db = getFirestore(app);
 
-// الحصول على معرف الجهاز أو إنشاء واحد جديد
+// معرف ثابت لجميع المستخدمين (single-user mode)
+// البيانات متاحة من أي جهاز تلقائياً
 export const getDeviceId = () => {
-  let deviceId = localStorage.getItem("deviceId");
-  if (!deviceId) {
-    deviceId =
-      "device_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now();
-    localStorage.setItem("deviceId", deviceId);
-  }
-  return deviceId;
+  return "shared_device"; // معرف ثابت للجميع
 };

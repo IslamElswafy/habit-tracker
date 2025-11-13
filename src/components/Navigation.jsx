@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, BarChart2, Settings } from 'lucide-react';
+import { Home, BarChart2, Settings, ShoppingBag } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const Navigation = () => {
@@ -8,6 +8,7 @@ const Navigation = () => {
   const navItems = [
     { path: '/', icon: Home, label: 'الرئيسية' },
     { path: '/reports', icon: BarChart2, label: 'التقارير' },
+    { path: '/store', icon: ShoppingBag, label: 'المتجر' },
     { path: '/settings', icon: Settings, label: 'الإعدادات' },
   ];
 

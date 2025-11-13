@@ -3,10 +3,11 @@ import { Plus, TrendingUp, GripVertical, Flame } from 'lucide-react';
 import HabitCard from '../components/HabitCard';
 import AddHabitModal from '../components/AddHabitModal';
 import EditHabitModal from '../components/EditHabitModal';
-import { getHabits, completeHabit, uncompleteHabit, isHabitCompletedToday, calculateStreak, deleteHabit, updateHabitsOrder, addSubtask, deleteSubtask } from '../services/habitService';
+import { getHabits, completeHabit, uncompleteHabit, isHabitCompletedToday, calculateStreak, deleteHabit, updateHabitsOrder, addSubtask, deleteSubtask, getBadHabitCompletionsCountToday, getBadHabitPointsToday } from '../services/habitService';
 import { getCategoryById } from '../config/categories';
 import { getTopStreaks, getStreakBadge, getStreakStats } from '../services/streakService';
 import { getCompletedSubtasksToday, completeSubtask, uncompleteSubtask } from '../services/subtaskService';
+import { updatePointsBalance } from '../services/pointsService';
 import {
   DndContext,
   closestCenter,
@@ -25,7 +26,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 // مكون العادة القابل للسحب
-const SortableHabitItem = ({ habit, icon, category, completed, onCheckedChange, onEdit, onDelete, subtasks, completedSubtasks, onSubtaskToggle, onSubtaskAdd, onSubtaskDelete }) => {
+const SortableHabitItem = ({ habit, icon, category, completed, onCheckedChange, onEdit, onDelete, subtasks, completedSubtasks, onSubtaskToggle, onSubtaskAdd, onSubtaskDelete, isBadHabit, completionCount, onAddAnother }) => {
   const {
     attributes,
     listeners,
@@ -68,6 +69,9 @@ const SortableHabitItem = ({ habit, icon, category, completed, onCheckedChange, 
         onSubtaskToggle={onSubtaskToggle}
         onSubtaskAdd={onSubtaskAdd}
         onSubtaskDelete={onSubtaskDelete}
+        isBadHabit={isBadHabit}
+        completionCount={completionCount}
+        onAddAnother={onAddAnother}
       />
     </div>
   );
@@ -84,6 +88,7 @@ const HomePage = () => {
   const [topStreaks, setTopStreaks] = useState([]);
   const [streakStats, setStreakStats] = useState(null);
   const [completedSubtasks, setCompletedSubtasks] = useState({});
+  const [badHabitCounts, setBadHabitCounts] = useState({}); // عدد مرات إكمال العادات السيئة
 
   useEffect(() => {
     loadHabits();
@@ -97,9 +102,23 @@ const HomePage = () => {
       // التحقق من الإنجاز لكل عادة وحساب الـ streak والمهام الفرعية
       const completedStatus = {};
       const completedSubtasksMap = {};
+      const badHabitCountsMap = {};
       const habitsWithStreak = await Promise.all(
         habitsData.map(async (habit) => {
-          const isCompleted = await isHabitCompletedToday(habit.id);
+          const isBadHabit = habit.category === "bad";
+          let isCompleted = false;
+          let completionCount = 0;
+
+          if (isBadHabit) {
+            // للعادات السيئة، نحصل على عدد المرات
+            completionCount = await getBadHabitCompletionsCountToday(habit.id);
+            isCompleted = completionCount > 0;
+            badHabitCountsMap[habit.id] = completionCount;
+          } else {
+            // للعادات العادية، نستخدم النظام القديم
+            isCompleted = await isHabitCompletedToday(habit.id);
+          }
+
           const streak = await calculateStreak(habit.id);
           completedStatus[habit.id] = isCompleted;
           
@@ -119,12 +138,19 @@ const HomePage = () => {
       setHabits(sortedHabits);
       setCompletedHabits(completedStatus);
       setCompletedSubtasks(completedSubtasksMap);
+      setBadHabitCounts(badHabitCountsMap);
       
-      // حساب إجمالي النقاط اليوم (شامل المهام الفرعية)
+      // حساب إجمالي النقاط اليوم (شامل المهام الفرعية والعادات السيئة)
       let todayPoints = 0;
       sortedHabits.forEach(habit => {
-        if (completedStatus[habit.id]) {
-          // إذا كانت العادة الرئيسية مكتملة، احسب نقاطها
+        const isBadHabit = habit.category === "bad";
+        
+        if (isBadHabit) {
+          // للعادات السيئة، نحسب النقاط بناءً على عدد المرات
+          const count = badHabitCountsMap[habit.id] || 0;
+          todayPoints += count * habit.points; // النقاط سالبة، لذا سيتم الخصم
+        } else if (completedStatus[habit.id]) {
+          // للعادات العادية
           if (habit.subtasks && habit.subtasks.length > 0) {
             // احسب نقاط المهام الفرعية المكتملة
             const subtaskPoints = habit.subtasks
@@ -161,13 +187,35 @@ const HomePage = () => {
     const habit = habits.find(h => h.id === habitId);
     if (!habit) return;
 
+    const isBadHabit = habit.category === "bad";
+
     try {
       if (checked) {
-        await completeHabit(habitId, habit.points);
+        await completeHabit(habitId, habit.points, isBadHabit);
         setTotalPoints(prev => prev + habit.points);
+        // تحديث رصيد النقاط المتراكمة
+        await updatePointsBalance(habit.points);
+        
+        // للعادات السيئة، نزيد العدد
+        if (isBadHabit) {
+          setBadHabitCounts(prev => ({
+            ...prev,
+            [habitId]: (prev[habitId] || 0) + 1,
+          }));
+        }
       } else {
-        await uncompleteHabit(habitId);
+        await uncompleteHabit(habitId, isBadHabit);
         setTotalPoints(prev => prev - habit.points);
+        // تحديث رصيد النقاط المتراكمة (خصم النقاط)
+        await updatePointsBalance(-habit.points);
+        
+        // للعادات السيئة، نقلل العدد
+        if (isBadHabit) {
+          setBadHabitCounts(prev => ({
+            ...prev,
+            [habitId]: Math.max(0, (prev[habitId] || 0) - 1),
+          }));
+        }
       }
       
       setCompletedHabits(prev => ({
@@ -183,6 +231,30 @@ const HomePage = () => {
       
     } catch (error) {
       console.error('Error updating habit:', error);
+    }
+  };
+
+  // دالة خاصة للعادات السيئة - إضافة مرة أخرى
+  const handleBadHabitAdd = async (habitId) => {
+    const habit = habits.find(h => h.id === habitId);
+    if (!habit || habit.category !== "bad") return;
+
+    try {
+      await completeHabit(habitId, habit.points, true);
+      setTotalPoints(prev => prev + habit.points);
+      await updatePointsBalance(habit.points);
+      
+      setBadHabitCounts(prev => ({
+        ...prev,
+        [habitId]: (prev[habitId] || 0) + 1,
+      }));
+      
+      setCompletedHabits(prev => ({
+        ...prev,
+        [habitId]: true,
+      }));
+    } catch (error) {
+      console.error('Error adding bad habit completion:', error);
     }
   };
 
@@ -288,6 +360,8 @@ const HomePage = () => {
           [habitId]: [...(prev[habitId] || []), subtaskId],
         }));
         setTotalPoints(prev => prev + subtask.points);
+        // تحديث رصيد النقاط المتراكمة
+        await updatePointsBalance(subtask.points);
       } else {
         await uncompleteSubtask(habitId, subtaskId);
         setCompletedSubtasks(prev => ({
@@ -295,6 +369,8 @@ const HomePage = () => {
           [habitId]: (prev[habitId] || []).filter(id => id !== subtaskId),
         }));
         setTotalPoints(prev => prev - subtask.points);
+        // تحديث رصيد النقاط المتراكمة (خصم النقاط)
+        await updatePointsBalance(-subtask.points);
       }
     } catch (error) {
       console.error('Error toggling subtask:', error);
@@ -386,7 +462,11 @@ const HomePage = () => {
           </div>
 
           {/* Stats Card */}
-          <div className="bg-gradient-to-r from-primary to-primary/80 text-primary-foreground rounded-xl p-6 shadow-lg">
+          <div className={`rounded-xl p-6 shadow-lg ${
+            totalPoints >= 0 
+              ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground' 
+              : 'bg-gradient-to-r from-red-600 to-red-700 text-white'
+          }`}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm opacity-90 mb-1">نقاط اليوم</p>
@@ -398,7 +478,11 @@ const HomePage = () => {
                 </p>
               </div>
               <div className="bg-white/20 p-4 rounded-full">
-                <TrendingUp className="h-8 w-8" />
+                {totalPoints >= 0 ? (
+                  <TrendingUp className="h-8 w-8" />
+                ) : (
+                  <TrendingUp className="h-8 w-8 rotate-180" />
+                )}
               </div>
             </div>
             <div className="mt-4 pt-4 border-t border-white/20">
@@ -406,7 +490,7 @@ const HomePage = () => {
                 أكملت {Object.values(completedHabits).filter(Boolean).length} من {habits.length} عادة
               </p>
               <p className="text-xs opacity-75 mt-1">
-                💡 النقاط تُحسب لليوم الحالي فقط
+                💡 النقاط تُحسب لليوم الحالي فقط {totalPoints < 0 && '⚠️ العادات السيئة تخصم نقاط'}
               </p>
             </div>
           </div>
@@ -514,6 +598,9 @@ const HomePage = () => {
                         onSubtaskToggle={(subtaskId, checked) => handleSubtaskToggle(habit.id, subtaskId, checked)}
                         onSubtaskAdd={handleSubtaskAdd}
                         onSubtaskDelete={(subtaskId) => handleSubtaskDelete(habit.id, subtaskId)}
+                        isBadHabit={habit.category === "bad"}
+                        completionCount={badHabitCounts[habit.id] || 0}
+                        onAddAnother={() => handleBadHabitAdd(habit.id)}
                       />
                     ))}
                   </div>

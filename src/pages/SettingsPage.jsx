@@ -1,19 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Edit2, Save, X } from 'lucide-react';
+import { Trash2, Edit2, Save, X, AlertTriangle, Download } from 'lucide-react';
 import { getHabits, deleteHabit, updateHabit } from '../services/habitService';
 import { getCategoryById, HABIT_CATEGORIES } from '../config/categories';
-import { getDeviceId } from '../config/firebase';
+import { addBadHabits } from '../utils/addHabitsHelper';
 
 const SettingsPage = () => {
   const [habits, setHabits] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [isLoading, setIsLoading] = useState(true);
-  const [deviceId, setDeviceId] = useState('');
+  const [isAddingBadHabits, setIsAddingBadHabits] = useState(false);
+  const [badHabitsResult, setBadHabitsResult] = useState(null);
 
   useEffect(() => {
     loadHabits();
-    setDeviceId(getDeviceId());
   }, []);
 
   const loadHabits = async () => {
@@ -69,6 +69,29 @@ const SettingsPage = () => {
     setEditForm({});
   };
 
+  const handleAddBadHabits = async () => {
+    if (!confirm('هل تريد إضافة العادات السيئة (6 عادات)؟')) return;
+    
+    setIsAddingBadHabits(true);
+    setBadHabitsResult(null);
+    
+    try {
+      const result = await addBadHabits();
+      setBadHabitsResult(result);
+      // إعادة تحميل العادات
+      await loadHabits();
+    } catch (error) {
+      console.error('Error adding bad habits:', error);
+      setBadHabitsResult({ 
+        success: 0, 
+        failed: 0, 
+        error: error.message 
+      });
+    } finally {
+      setIsAddingBadHabits(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -88,16 +111,84 @@ const SettingsPage = () => {
           <p className="text-muted-foreground">إدارة العادات ومعلومات الجهاز</p>
         </div>
 
-        {/* Device Info */}
+        {/* App Info */}
         <div className="bg-card border border-border rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-semibold mb-4">معلومات الجهاز</h2>
-          <div className="space-y-2">
+          <h2 className="text-lg font-semibold mb-4">معلومات التطبيق</h2>
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">معرف الجهاز:</span>
-              <code className="text-xs bg-muted px-3 py-1 rounded">{deviceId}</code>
+              <span className="text-muted-foreground">الإصدار:</span>
+              <span className="text-sm font-medium">1.0.0</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              استخدم هذا المعرف للوصول إلى بياناتك من أجهزة أخرى
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">وضع المزامنة:</span>
+              <span className="text-sm font-medium text-green-600">تلقائي عبر الأجهزة ✅</span>
+            </div>
+            <p className="text-xs text-muted-foreground pt-2 border-t border-border">
+              💡 بياناتك متاحة تلقائياً من أي جهاز أو متصفح
+            </p>
+          </div>
+        </div>
+
+        {/* Add Bad Habits Section */}
+        <div className="bg-card border border-border rounded-lg p-6 mb-8">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/20">
+              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">العادات السيئة (ضريبة نقاط)</h2>
+              <p className="text-sm text-muted-foreground">
+                إضافة 6 عادات سيئة مع نقاط سالبة
+              </p>
+            </div>
+          </div>
+
+          {badHabitsResult ? (
+            <div className={`p-4 rounded-lg ${
+              badHabitsResult.success > 0 
+                ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800' 
+                : 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800'
+            }`}>
+              <p className={`text-sm ${
+                badHabitsResult.success > 0 
+                  ? 'text-green-700 dark:text-green-300' 
+                  : 'text-red-700 dark:text-red-300'
+              }`}>
+                {badHabitsResult.success > 0 
+                  ? `✅ تم إضافة ${badHabitsResult.success} عادة سيئة بنجاح`
+                  : `❌ فشل: ${badHabitsResult.error || 'حدث خطأ أثناء الإضافة'}`
+                }
+              </p>
+              {badHabitsResult.failed > 0 && (
+                <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-2">
+                  ⚠️ فشل إضافة {badHabitsResult.failed} عادة
+                </p>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={handleAddBadHabits}
+              disabled={isAddingBadHabits}
+              className="w-full flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isAddingBadHabits ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  جاري الإضافة...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  إضافة العادات السيئة
+                </>
+              )}
+            </button>
+          )}
+
+          <div className="mt-4 pt-4 border-t border-border">
+            <p className="text-xs text-muted-foreground">
+              العادات السيئة تشمل: سوشيال ميديا بلا هدف (-10)، ألعاب فيديو (-20)، 
+              مشاهدة مانجا/أنمي (-15)، ترفية (-40)، سهر غير مبرر (-20)، أكل سيئ (-10)
             </p>
           </div>
         </div>

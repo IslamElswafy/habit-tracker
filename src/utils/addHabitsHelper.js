@@ -230,6 +230,44 @@ const habitsData = [
     category: "entertainment",
     points: 50,
   },
+
+  // عادات سيئة (ضريبة نقاط)
+  {
+    title: "سوشيال ميديا بلا هدف",
+    description: "استخدام السوشيال ميديا بدون هدف (30 دقيقة)",
+    category: "bad",
+    points: -10,
+  },
+  {
+    title: "ألعاب فيديو",
+    description: "لعب ألعاب فيديو (45 دقيقة)",
+    category: "bad",
+    points: -20,
+  },
+  {
+    title: "مشاهدة مانجا/أنمي",
+    description: "مشاهدة مانجا أو أنمي (30 دقيقة)",
+    category: "bad",
+    points: -15,
+  },
+  {
+    title: "ترفية",
+    description: "مشاهدة محتوى إباحي (مرة واحدة)",
+    category: "bad",
+    points: -40,
+  },
+  {
+    title: "سهر غير مبرر",
+    description: "السهر بدون سبب مبرر",
+    category: "bad",
+    points: -20,
+  },
+  {
+    title: "أكل سيئ",
+    description: "تناول طعام غير صحي",
+    category: "bad",
+    points: -10,
+  },
 ];
 
 export async function addAllHabits() {
@@ -274,6 +312,65 @@ export async function addAllHabits() {
   console.log("\n📊 ملخص:");
   console.log(`✅ نجح: ${successCount} عادة`);
   console.log(`❌ فشل: ${errorCount} عادة`);
+  console.log(`💾 معرف الجهاز: ${deviceId}`);
+
+  return result;
+}
+
+// دالة لإضافة العادات السيئة فقط
+export async function addBadHabits() {
+  console.log("🚀 بدء إضافة العادات السيئة...");
+
+  const deviceId = getDeviceId();
+  console.log("📱 معرف الجهاز:", deviceId);
+
+  // تصفية العادات السيئة فقط
+  const badHabits = habitsData.filter((habit) => habit.category === "bad");
+
+  let successCount = 0;
+  let errorCount = 0;
+  const errors = [];
+
+  // الحصول على آخر ترتيب للعادات الموجودة
+  const { getHabits } = await import("../services/habitService");
+  const existingHabits = await getHabits();
+  const maxOrder = existingHabits.reduce(
+    (max, h) => Math.max(max, h.order || 0),
+    0
+  );
+
+  for (let i = 0; i < badHabits.length; i++) {
+    const habit = badHabits[i];
+    try {
+      const habitData = {
+        ...habit,
+        deviceId,
+        createdAt: new Date().toISOString(),
+        streak: 0,
+        order: maxOrder + i + 1, // إضافة ترتيب بعد العادات الموجودة
+      };
+
+      await addDoc(collection(db, "habits"), habitData);
+      console.log(`✅ تمت إضافة: ${habit.title}`);
+      successCount++;
+    } catch (error) {
+      console.error(`❌ خطأ في إضافة: ${habit.title}`, error);
+      errors.push({ habit: habit.title, error: error.message });
+      errorCount++;
+    }
+  }
+
+  const result = {
+    success: successCount,
+    failed: errorCount,
+    total: badHabits.length,
+    errors,
+    deviceId,
+  };
+
+  console.log("\n📊 ملخص:");
+  console.log(`✅ نجح: ${successCount} عادة سيئة`);
+  console.log(`❌ فشل: ${errorCount} عادة سيئة`);
   console.log(`💾 معرف الجهاز: ${deviceId}`);
 
   return result;

@@ -25,6 +25,9 @@ const HabitCard = React.forwardRef(
       onSubtaskToggle,
       onSubtaskAdd,
       onSubtaskDelete,
+      isBadHabit = false,
+      completionCount = 0,
+      onAddAnother,
     },
     ref
   ) => {
@@ -33,6 +36,11 @@ const HabitCard = React.forwardRef(
     const [newSubtaskTitle, setNewSubtaskTitle] = React.useState('');
     const [newSubtaskPoints, setNewSubtaskPoints] = React.useState(5);
     const [showAddSubtask, setShowAddSubtask] = React.useState(false);
+
+    // تحديث حالة isChecked عند تغيير completed
+    React.useEffect(() => {
+      setIsChecked(completed);
+    }, [completed]);
 
     const handleCheckedChange = (checked) => {
       setIsChecked(checked);
@@ -69,12 +77,33 @@ const HabitCard = React.forwardRef(
           className
         )}
       >
-        <Checkbox
-          id={id}
-          checked={isChecked}
-          onCheckedChange={handleCheckedChange}
-          className="mt-1"
-        />
+        {!isBadHabit ? (
+          <Checkbox
+            id={id}
+            checked={isChecked}
+            onCheckedChange={handleCheckedChange}
+            className="mt-1"
+          />
+        ) : (
+          <div className="mt-1 flex flex-col items-center gap-1">
+            <button
+              onClick={() => onCheckedChange?.(!isChecked)}
+              className={cn(
+                "flex size-6 items-center justify-center rounded border-2 transition-colors",
+                isChecked
+                  ? "border-red-500 bg-red-500 text-white"
+                  : "border-border bg-background"
+              )}
+            >
+              {isChecked && <Check className="h-4 w-4" />}
+            </button>
+            {completionCount > 0 && (
+              <span className="text-xs font-bold text-red-600 dark:text-red-400">
+                {completionCount}x
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="flex items-start gap-4 flex-1">
           <div
@@ -122,13 +151,18 @@ const HabitCard = React.forwardRef(
               {description}
             </p>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="font-medium">
+              <span className={cn(
+                "font-medium",
+                points < 0 && "text-red-600 dark:text-red-400"
+              )}>
                 💯 {subtasks.length > 0 ? (
                   <>
                     {completedSubtasksPoints}/{points} نقطة
                   </>
+                ) : isBadHabit && completionCount > 0 ? (
+                  `${completionCount} × ${points} = ${completionCount * points} نقطة`
                 ) : (
-                  `${points} نقطة`
+                  `${points < 0 ? '' : ''}${points} نقطة`
                 )}
               </span>
               {streak > 0 && (
@@ -143,6 +177,16 @@ const HabitCard = React.forwardRef(
                 >
                   {showSubtasks ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                   {subtasks.length} {subtasks.length === 1 ? 'مهمة فرعية' : 'مهام فرعية'}
+                </button>
+              )}
+              {isBadHabit && isChecked && onAddAnother && (
+                <button
+                  onClick={() => onAddAnother()}
+                  className="flex items-center gap-1 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors font-medium bg-red-50 dark:bg-red-950 px-2 py-1 rounded"
+                  title="إضافة مرة أخرى"
+                >
+                  <Plus className="h-3 w-3" />
+                  إضافة مرة أخرى
                 </button>
               )}
             </div>
