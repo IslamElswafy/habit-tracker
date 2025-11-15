@@ -17,6 +17,7 @@ const EditHabitModal = ({ isOpen, onClose, habit, onHabitUpdated }) => {
   const [isCompleted, setIsCompleted] = useState(false);
   const [completionCount, setCompletionCount] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [pointsInput, setPointsInput] = useState('');
 
   useEffect(() => {
     if (habit) {
@@ -26,6 +27,7 @@ const EditHabitModal = ({ isOpen, onClose, habit, onHabitUpdated }) => {
         category: habit.category || 'religious',
         points: habit.points || 10,
       });
+      setPointsInput(String(habit.points || 10));
       setSubtasks(habit.subtasks || []);
       
       // تحميل حالة الإكمال والـ streak
@@ -52,6 +54,11 @@ const EditHabitModal = ({ isOpen, onClose, habit, onHabitUpdated }) => {
       loadCompletionStatus();
     }
   }, [habit]);
+
+  // تحديث pointsInput عند تغيير formData.points
+  useEffect(() => {
+    setPointsInput(String(formData.points));
+  }, [formData.points]);
 
   // تحديث حالة الإكمال عند تغيير الفئة (فقط إذا تغيرت الفئة وليس عند التحميل الأول)
   useEffect(() => {
@@ -261,14 +268,36 @@ const EditHabitModal = ({ isOpen, onClose, habit, onHabitUpdated }) => {
               )}
             </label>
             <input
-              type="number"
-              min={formData.category === "bad" ? "-100" : "1"}
-              max="100"
+              type="text"
+              inputMode="numeric"
               required
-              value={formData.points}
+              value={pointsInput}
               onChange={(e) => {
-                const value = parseInt(e.target.value) || 0;
-                setFormData({ ...formData, points: value });
+                const inputValue = e.target.value;
+                setPointsInput(inputValue);
+                // السماح بإدخال الأرقام السالبة
+                if (inputValue === '' || inputValue === '-') {
+                  // السماح بكتابة "-" للبدء بإدخال رقم سالب
+                  return;
+                } else if (/^-?\d+$/.test(inputValue)) {
+                  // التحقق من أن القيمة رقم صحيح (سالب أو موجب)
+                  const numValue = Number(inputValue);
+                  const minValue = formData.category === "bad" ? -100 : 1;
+                  const maxValue = 100;
+                  if (numValue >= minValue && numValue <= maxValue) {
+                    setFormData({ ...formData, points: numValue });
+                  }
+                }
+              }}
+              onBlur={(e) => {
+                // عند فقدان التركيز، التأكد من أن القيمة صحيحة
+                if (e.target.value === '' || e.target.value === '-') {
+                  const defaultValue = formData.category === "bad" ? -10 : 10;
+                  setFormData({ ...formData, points: defaultValue });
+                  setPointsInput(String(defaultValue));
+                } else {
+                  setPointsInput(String(formData.points));
+                }
               }}
               className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
             />

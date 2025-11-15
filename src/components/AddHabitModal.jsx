@@ -12,6 +12,7 @@ const AddHabitModal = ({ isOpen, onClose, onHabitAdded }) => {
   });
   const [subtasks, setSubtasks] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [pointsInput, setPointsInput] = useState('10');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,6 +31,7 @@ const AddHabitModal = ({ isOpen, onClose, onHabitAdded }) => {
         category: 'religious',
         points: 10,
       });
+      setPointsInput('10');
       setSubtasks([]);
       onClose();
     } catch (error) {
@@ -104,7 +106,18 @@ const AddHabitModal = ({ isOpen, onClose, onHabitAdded }) => {
             <label className="block text-sm font-medium mb-2">الفئة</label>
             <select
               value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              onChange={(e) => {
+                const newCategory = e.target.value;
+                setFormData({ ...formData, category: newCategory });
+                // تحديث القيمة الافتراضية عند تغيير الفئة
+                if (newCategory === "bad" && formData.points > 0) {
+                  setFormData(prev => ({ ...prev, points: -10 }));
+                  setPointsInput('-10');
+                } else if (newCategory !== "bad" && formData.points < 0) {
+                  setFormData(prev => ({ ...prev, points: 10 }));
+                  setPointsInput('10');
+                }
+              }}
               className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
             >
               {Object.values(HABIT_CATEGORIES).map((cat) => (
@@ -125,14 +138,44 @@ const AddHabitModal = ({ isOpen, onClose, onHabitAdded }) => {
               )}
             </label>
             <input
-              type="number"
-              min="1"
-              max="100"
+              type="text"
+              inputMode="numeric"
               required
-              value={formData.points}
-              onChange={(e) => setFormData({ ...formData, points: parseInt(e.target.value) })}
+              value={pointsInput}
+              onChange={(e) => {
+                const inputValue = e.target.value;
+                setPointsInput(inputValue);
+                // السماح بإدخال الأرقام السالبة للعادات السيئة
+                if (inputValue === '' || inputValue === '-') {
+                  // السماح بكتابة "-" للبدء بإدخال رقم سالب
+                  return;
+                } else if (/^-?\d+$/.test(inputValue)) {
+                  // التحقق من أن القيمة رقم صحيح (سالب أو موجب)
+                  const numValue = Number(inputValue);
+                  const minValue = formData.category === "bad" ? -100 : 1;
+                  const maxValue = 100;
+                  if (numValue >= minValue && numValue <= maxValue) {
+                    setFormData({ ...formData, points: numValue });
+                  }
+                }
+              }}
+              onBlur={(e) => {
+                // عند فقدان التركيز، التأكد من أن القيمة صحيحة
+                if (e.target.value === '' || e.target.value === '-') {
+                  const defaultValue = formData.category === "bad" ? -10 : 10;
+                  setFormData({ ...formData, points: defaultValue });
+                  setPointsInput(String(defaultValue));
+                } else {
+                  setPointsInput(String(formData.points));
+                }
+              }}
               className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
             />
+            {formData.category === "bad" && formData.points >= 0 && (
+              <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                💡 تلميح: العادات السيئة يجب أن تكون نقاطها سالبة
+              </p>
+            )}
             {subtasks.length > 0 && totalSubtasksPoints !== formData.points && (
               <p className="text-xs text-destructive mt-1">
                 ⚠️ تحذير: مجموع المهام الفرعية ({totalSubtasksPoints}) لا يساوي النقاط الإجمالية ({formData.points})
