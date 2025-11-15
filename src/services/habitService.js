@@ -335,35 +335,48 @@ export const calculateStreak = async (habitId) => {
   try {
     const deviceId = getDeviceId();
     const completionsRef = collection(db, COMPLETIONS_COLLECTION);
+
+    // استخدام استعلام بسيط بدون orderBy لتجنب الحاجة إلى index مركب
+    // سنقوم بالترتيب في JavaScript بدلاً من ذلك
     const q = query(
       completionsRef,
       where("deviceId", "==", deviceId),
-      where("habitId", "==", habitId),
-      orderBy("date", "desc")
+      where("habitId", "==", habitId)
     );
 
     const querySnapshot = await getDocs(q);
-    const completions = [];
+
+    // الحصول على التواريخ الفريدة فقط (للعادات السيئة قد يكون هناك عدة إكمالات في نفس اليوم)
+    const uniqueDates = new Set();
     querySnapshot.forEach((doc) => {
-      completions.push(doc.data().date);
+      uniqueDates.add(doc.data().date);
     });
 
-    if (completions.length === 0) return 0;
+    if (uniqueDates.size === 0) return 0;
 
+    // تحويل التواريخ إلى مصفوفة وترتيبها (من الأحدث للأقدم)
+    const dates = Array.from(uniqueDates).sort((a, b) => b.localeCompare(a));
+
+    // حساب الـ streak: نبدأ من اليوم ونتحقق من الأيام المتتالية
+    const today = format(new Date(), "yyyy-MM-dd");
     let streak = 0;
-    let currentDate = new Date();
 
-    for (let i = 0; i < completions.length; i++) {
-      const completionDate = new Date(completions[i]);
-      const diffDays = Math.floor(
-        (currentDate - completionDate) / (1000 * 60 * 60 * 24)
-      );
+    // نبدأ من اليوم إذا كان هناك إكمال اليوم، وإلا نبدأ من أمس
+    let currentDate = today;
+    if (!dates.includes(today)) {
+      // إذا لم يكن هناك إكمال اليوم، نبدأ من أمس
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      currentDate = format(yesterday, "yyyy-MM-dd");
+    }
 
-      if (diffDays === i) {
-        streak++;
-      } else {
-        break;
-      }
+    // التحقق من الأيام المتتالية (نرجع للخلف من اليوم/أمس)
+    while (dates.includes(currentDate)) {
+      streak++;
+      // حساب التاريخ السابق
+      const prevDate = new Date(currentDate);
+      prevDate.setDate(prevDate.getDate() - 1);
+      currentDate = format(prevDate, "yyyy-MM-dd");
     }
 
     return streak;

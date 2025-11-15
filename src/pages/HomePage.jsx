@@ -89,9 +89,29 @@ const HomePage = () => {
   const [streakStats, setStreakStats] = useState(null);
   const [completedSubtasks, setCompletedSubtasks] = useState({});
   const [badHabitCounts, setBadHabitCounts] = useState({}); // عدد مرات إكمال العادات السيئة
+  const [showStickyPoints, setShowStickyPoints] = useState(false);
 
   useEffect(() => {
     loadHabits();
+  }, []);
+
+  // تتبع التمرير لإظهار/إخفاء بطاقة النقاط الملتصقة
+  useEffect(() => {
+    const handleScroll = () => {
+      const pointsCard = document.getElementById('points-card');
+      if (pointsCard) {
+        const rect = pointsCard.getBoundingClientRect();
+        // إذا كانت البطاقة خارج الشاشة (فوقها)، نعرض البطاقة الملتصقة
+        setShowStickyPoints(rect.bottom < 0);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    handleScroll(); // التحقق مرة واحدة عند التحميل
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
   }, []);
 
   const loadHabits = async () => {
@@ -198,9 +218,10 @@ const HomePage = () => {
         
         // للعادات السيئة، نزيد العدد
         if (isBadHabit) {
+          const newCount = await getBadHabitCompletionsCountToday(habitId);
           setBadHabitCounts(prev => ({
             ...prev,
-            [habitId]: (prev[habitId] || 0) + 1,
+            [habitId]: newCount,
           }));
         }
       } else {
@@ -211,9 +232,10 @@ const HomePage = () => {
         
         // للعادات السيئة، نقلل العدد
         if (isBadHabit) {
+          const newCount = await getBadHabitCompletionsCountToday(habitId);
           setBadHabitCounts(prev => ({
             ...prev,
-            [habitId]: Math.max(0, (prev[habitId] || 0) - 1),
+            [habitId]: newCount,
           }));
         }
       }
@@ -222,6 +244,9 @@ const HomePage = () => {
         ...prev,
         [habitId]: checked,
       }));
+      
+      // انتظار قصير لضمان تحديث البيانات في Firebase
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       // تحديث الـ streak
       const newStreak = await calculateStreak(habitId);
@@ -244,15 +269,26 @@ const HomePage = () => {
       setTotalPoints(prev => prev + habit.points);
       await updatePointsBalance(habit.points);
       
+      // إعادة تحميل عدد المرات من قاعدة البيانات
+      const newCount = await getBadHabitCompletionsCountToday(habitId);
       setBadHabitCounts(prev => ({
         ...prev,
-        [habitId]: (prev[habitId] || 0) + 1,
+        [habitId]: newCount,
       }));
       
       setCompletedHabits(prev => ({
         ...prev,
         [habitId]: true,
       }));
+      
+      // انتظار قصير لضمان تحديث البيانات في Firebase
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // تحديث الـ streak
+      const newStreak = await calculateStreak(habitId);
+      setHabits(prev => prev.map(h => 
+        h.id === habitId ? { ...h, streak: newStreak } : h
+      ));
     } catch (error) {
       console.error('Error adding bad habit completion:', error);
     }
@@ -270,10 +306,14 @@ const HomePage = () => {
     }
   };
 
-  const handleHabitUpdated = (updatedHabit) => {
+  const handleHabitUpdated = async (updatedHabit) => {
+    // تحديث العادة في القائمة
     setHabits(prev => prev.map(h => 
       h.id === updatedHabit.id ? updatedHabit : h
     ));
+    
+    // إعادة تحميل العادات لضمان تحديث الـ streak وعدد المرات
+    await loadHabits();
   };
 
   const handleHabitDelete = async (habitId) => {
@@ -437,7 +477,32 @@ const HomePage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background ">
+      {/* بطاقة النقاط الملتصقة */}
+      {showStickyPoints && (
+        <div className="fixed top-4 left-4 z-50 hidden md:block animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className={`rounded-xl p-4 shadow-2xl backdrop-blur-sm border border-white/20 ${
+            totalPoints >= 0 
+              ? 'bg-gradient-to-r from-primary to-primary/90 text-primary-foreground' 
+              : 'bg-gradient-to-r from-red-600 to-red-700 text-white'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-2 rounded-full">
+                {totalPoints >= 0 ? (
+                  <TrendingUp className="h-5 w-5" />
+                ) : (
+                  <TrendingUp className="h-5 w-5 rotate-180" />
+                )}
+              </div>
+              <div>
+                <p className="text-xs opacity-90">نقاط اليوم</p>
+                <p className="text-2xl font-bold">{totalPoints}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="max-w-4xl mx-auto p-4 md:p-8">
         {/* Header */}
         <div className="mb-8">
@@ -462,11 +527,13 @@ const HomePage = () => {
           </div>
 
           {/* Stats Card */}
-          <div className={`rounded-xl p-6 shadow-lg ${
-            totalPoints >= 0 
-              ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground' 
-              : 'bg-gradient-to-r from-red-600 to-red-700 text-white'
-          }`}>
+          <div 
+            id="points-card"
+            className={`rounded-xl p-6 shadow-lg ${
+              totalPoints >= 0 
+                ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground' 
+                : 'bg-gradient-to-r from-red-600 to-red-700 text-white'
+            }`}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm opacity-90 mb-1">نقاط اليوم</p>
@@ -496,67 +563,7 @@ const HomePage = () => {
           </div>
         </div>
 
-        {/* Streaks Section */}
-        {topStreaks.length > 0 && (
-          <div className="mb-8">
-            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl p-6 shadow-lg">
-              <div className="flex items-center gap-3 mb-4">
-                <Flame className="h-6 w-6" />
-                <h2 className="text-2xl font-bold">🔥 السلاسل المتتالية</h2>
-              </div>
-              
-              {/* Streak Stats */}
-              {streakStats && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                  <div className="bg-white/20 rounded-lg p-3 text-center backdrop-blur-sm">
-                    <p className="text-3xl font-bold">{streakStats.longestStreak}</p>
-                    <p className="text-xs opacity-90">أطول سلسلة</p>
-                  </div>
-                  <div className="bg-white/20 rounded-lg p-3 text-center backdrop-blur-sm">
-                    <p className="text-3xl font-bold">{streakStats.activeStreaks}</p>
-                    <p className="text-xs opacity-90">سلاسل نشطة</p>
-                  </div>
-                  <div className="bg-white/20 rounded-lg p-3 text-center backdrop-blur-sm">
-                    <p className="text-3xl font-bold">{streakStats.averageStreak}</p>
-                    <p className="text-xs opacity-90">متوسط</p>
-                  </div>
-                  <div className="bg-white/20 rounded-lg p-3 text-center backdrop-blur-sm">
-                    <p className="text-3xl font-bold">{streakStats.totalStreaks}</p>
-                    <p className="text-xs opacity-90">عادات متتبعة</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Top 3 Streaks */}
-              <div className="space-y-2">
-                {topStreaks.slice(0, 3).map((item, index) => {
-                  const badge = getStreakBadge(item.streak);
-                  return (
-                    <div key={item.habit.id} className="flex items-center justify-between bg-white/10 backdrop-blur-sm rounded-lg p-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{badge.icon}</span>
-                        <div>
-                          <p className="font-semibold text-sm">{item.habit.title}</p>
-                          <p className="text-xs opacity-90">{badge.title} - {badge.description}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Flame className="h-5 w-5" />
-                        <span className="text-2xl font-bold">{item.streak}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {topStreaks.length > 3 && (
-                <p className="text-xs text-center mt-3 opacity-75">
-                  و {topStreaks.length - 3} عادات أخرى بسلاسل نشطة
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+      
 
         {/* Habits by Category */}
         {Object.entries(groupedHabits).map(([categoryId, categoryHabits]) => {

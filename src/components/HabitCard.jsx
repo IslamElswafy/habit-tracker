@@ -110,7 +110,9 @@ const HabitCard = React.forwardRef(
             className={cn(
               "flex size-12 shrink-0 items-center justify-center rounded-lg transition-colors",
               isChecked
-                ? "bg-primary/20 text-primary"
+                ? isBadHabit
+                  ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
+                  : "bg-primary/20 text-primary"
                 : "bg-muted text-muted-foreground"
             )}
           >

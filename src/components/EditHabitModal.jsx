@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, Check, Flame } from 'lucide-react';
 import { HABIT_CATEGORIES } from '../config/categories';
-import { updateHabit } from '../services/habitService';
+import { updateHabit, calculateStreak } from '../services/habitService';
+import { completeHabit, uncompleteHabit, isHabitCompletedToday, getBadHabitCompletionsCountToday } from '../services/habitService';
+import { updatePointsBalance } from '../services/pointsService';
 
 const EditHabitModal = ({ isOpen, onClose, habit, onHabitUpdated }) => {
   const [formData, setFormData] = useState({
@@ -12,6 +14,9 @@ const EditHabitModal = ({ isOpen, onClose, habit, onHabitUpdated }) => {
   });
   const [subtasks, setSubtasks] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [completionCount, setCompletionCount] = useState(0);
+  const [streak, setStreak] = useState(0);
 
   useEffect(() => {
     if (habit) {
@@ -22,8 +27,59 @@ const EditHabitModal = ({ isOpen, onClose, habit, onHabitUpdated }) => {
         points: habit.points || 10,
       });
       setSubtasks(habit.subtasks || []);
+      
+      // تحميل حالة الإكمال والـ streak
+      const loadCompletionStatus = async () => {
+        const isBadHabit = habit.category === "bad";
+        try {
+          if (isBadHabit) {
+            const count = await getBadHabitCompletionsCountToday(habit.id);
+            setCompletionCount(count);
+            setIsCompleted(count > 0);
+          } else {
+            const completed = await isHabitCompletedToday(habit.id);
+            setIsCompleted(completed);
+          }
+          
+          // تحميل الـ streak
+          const currentStreak = await calculateStreak(habit.id);
+          setStreak(currentStreak);
+        } catch (error) {
+          console.error('Error loading completion status:', error);
+        }
+      };
+      
+      loadCompletionStatus();
     }
   }, [habit]);
+
+  // تحديث حالة الإكمال عند تغيير الفئة (فقط إذا تغيرت الفئة وليس عند التحميل الأول)
+  useEffect(() => {
+    if (habit && formData.category !== habit.category) {
+      const loadCompletionStatus = async () => {
+        const isBadHabit = formData.category === "bad";
+        try {
+          if (isBadHabit) {
+            const count = await getBadHabitCompletionsCountToday(habit.id);
+            setCompletionCount(count);
+            setIsCompleted(count > 0);
+          } else {
+            const completed = await isHabitCompletedToday(habit.id);
+            setIsCompleted(completed);
+            setCompletionCount(0);
+          }
+          
+          // إعادة حساب الـ streak
+          const currentStreak = await calculateStreak(habit.id);
+          setStreak(currentStreak);
+        } catch (error) {
+          console.error('Error loading completion status:', error);
+        }
+      };
+      
+      loadCompletionStatus();
+    }
+  }, [formData.category]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,13 +91,88 @@ const EditHabitModal = ({ isOpen, onClose, habit, onHabitUpdated }) => {
         subtasks,
       };
       await updateHabit(habit.id, updates);
-      onHabitUpdated({ ...habit, ...updates });
+      
+      // إعادة حساب الـ streak بعد التحديث
+      const newStreak = await calculateStreak(habit.id);
+      setStreak(newStreak);
+      
+      onHabitUpdated({ ...habit, ...updates, streak: newStreak });
       onClose();
     } catch (error) {
       console.error('Error updating habit:', error);
       alert('حدث خطأ أثناء تحديث العادة');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleToggleCompletion = async () => {
+    if (!habit) return;
+    
+    const isBadHabit = formData.category === "bad";
+    const newCompleted = !isCompleted;
+    const points = formData.points;
+    
+    try {
+      if (newCompleted) {
+        await completeHabit(habit.id, points, isBadHabit);
+        await updatePointsBalance(points);
+        
+        if (isBadHabit) {
+          const newCount = await getBadHabitCompletionsCountToday(habit.id);
+          setCompletionCount(newCount);
+        }
+      } else {
+        await uncompleteHabit(habit.id, isBadHabit);
+        await updatePointsBalance(-points);
+        
+        if (isBadHabit) {
+          const newCount = await getBadHabitCompletionsCountToday(habit.id);
+          setCompletionCount(newCount);
+        }
+      }
+      
+      setIsCompleted(newCompleted);
+      
+      // إعادة حساب الـ streak
+      const newStreak = await calculateStreak(habit.id);
+      setStreak(newStreak);
+      
+      // تحديث العادة في القائمة الرئيسية مع الـ streak المحدث
+      if (onHabitUpdated) {
+        onHabitUpdated({ ...habit, ...formData, streak: newStreak });
+      }
+    } catch (error) {
+      console.error('Error toggling habit completion:', error);
+      alert('حدث خطأ أثناء تفعيل/إلغاء تفعيل العادة');
+    }
+  };
+
+  const handleAddAnother = async () => {
+    if (!habit || formData.category !== "bad") return;
+    
+    const points = formData.points;
+    
+    try {
+      await completeHabit(habit.id, points, true);
+      await updatePointsBalance(points);
+      
+      // إعادة تحميل عدد المرات
+      const newCount = await getBadHabitCompletionsCountToday(habit.id);
+      setCompletionCount(newCount);
+      setIsCompleted(true);
+      
+      // إعادة حساب الـ streak
+      const newStreak = await calculateStreak(habit.id);
+      setStreak(newStreak);
+      
+      // تحديث العادة في القائمة الرئيسية مع الـ streak المحدث
+      if (onHabitUpdated) {
+        onHabitUpdated({ ...habit, ...formData, streak: newStreak });
+      }
+    } catch (error) {
+      console.error('Error adding another completion:', error);
+      alert('حدث خطأ أثناء إضافة مرة أخرى');
     }
   };
 
@@ -131,19 +262,92 @@ const EditHabitModal = ({ isOpen, onClose, habit, onHabitUpdated }) => {
             </label>
             <input
               type="number"
-              min="1"
+              min={formData.category === "bad" ? "-100" : "1"}
               max="100"
               required
               value={formData.points}
-              onChange={(e) => setFormData({ ...formData, points: parseInt(e.target.value) })}
+              onChange={(e) => {
+                const value = parseInt(e.target.value) || 0;
+                setFormData({ ...formData, points: value });
+              }}
               className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring"
             />
+            {formData.category === "bad" && formData.points >= 0 && (
+              <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                💡 تلميح: العادات السيئة يجب أن تكون نقاطها سالبة
+              </p>
+            )}
             {subtasks.length > 0 && totalSubtasksPoints !== formData.points && (
               <p className="text-xs text-destructive mt-1">
                 ⚠️ تحذير: مجموع المهام الفرعية ({totalSubtasksPoints}) لا يساوي النقاط الإجمالية ({formData.points})
               </p>
             )}
           </div>
+
+          {/* معلومات الـ streak */}
+          <div className="border-t border-border pt-4">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium">معلومات الإنجاز</label>
+              <div className="flex items-center gap-4">
+                {streak > 0 && (
+                  <div className="flex items-center gap-1 rounded-full px-3 py-1 bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300 text-sm font-medium">
+                    <Flame className="h-4 w-4" />
+                    {streak} {streak === 1 ? 'يوم' : 'يوم متتالي'}
+                  </div>
+                )}
+                {formData.category === "bad" && completionCount > 0 && (
+                  <div className="flex items-center gap-1 text-sm font-medium text-red-600 dark:text-red-400">
+                    <span className="bg-red-100 dark:bg-red-950 px-2 py-1 rounded">
+                      {completionCount}x
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* أزرار تفعيل/إلغاء تفعيل للعادات السيئة */}
+          {formData.category === "bad" && (
+            <div className="border-t border-border pt-4">
+              <label className="block text-sm font-medium mb-3">حالة التفعيل</label>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={handleToggleCompletion}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
+                    isCompleted
+                      ? "bg-red-500 text-white hover:bg-red-600"
+                      : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                  }`}
+                >
+                  <div className={`flex size-5 items-center justify-center rounded border-2 ${
+                    isCompleted
+                      ? "border-white bg-white text-red-500"
+                      : "border-border bg-background"
+                  }`}>
+                    {isCompleted && <Check className="h-3 w-3" />}
+                  </div>
+                  <span>{isCompleted ? "مفعّلة" : "غير مفعّلة"}</span>
+                </button>
+                
+                {isCompleted && (
+                  <button
+                    type="button"
+                    onClick={handleAddAnother}
+                    className="flex items-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors text-sm"
+                  >
+                    <Plus className="h-4 w-4" />
+                    إضافة مرة أخرى
+                  </button>
+                )}
+              </div>
+              {isCompleted && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  العادة مفعّلة اليوم ({completionCount} {completionCount === 1 ? 'مرة' : 'مرات'})
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Subtasks Management */}
           <div>
